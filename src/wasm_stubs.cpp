@@ -101,12 +101,11 @@ std::vector<std::string> SubjectRegistry::paths() const {
   return out;
 }
 
-void SubjectRegistry::garbage_collect(const std::set<std::string>& live) {
-  for (auto it = map_.begin(); it != map_.end();) {
-    if (live.count(it->first) == 0) it = map_.erase(it);
-    else ++it;
-  }
-}
+// Like the firmware, subjects outlive layouts: widgets of the previous
+// layout may still observe one during the swap, and a STRING subject points
+// into its entry's buffers. The firmware only drops subscriptions here, and
+// WASM has none.
+void SubjectRegistry::garbage_collect(const std::set<std::string>&) {}
 
 SubjectRegistry& registry() {
   static SubjectRegistry r;
