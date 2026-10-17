@@ -56,28 +56,34 @@ lv_subject_t* SubjectRegistry::get_or_create(const std::string& path,
   auto it = map_.find(path);
   if (it != map_.end()) {
     if (it->second.entry->kind != kind) return nullptr;
-    return &it->second.entry->subject;
+    return it->second.entry->subject;
   }
   auto entry = std::make_unique<SubjectEntry>();
   entry->path = path;
   entry->kind = kind;
   std::memset(entry->str_buf,  0, sizeof(entry->str_buf));
   std::memset(entry->str_prev, 0, sizeof(entry->str_prev));
+  // Mirrors the firmware: LVGL owns the subject, the entry keeps the string
+  // buffers a STRING subject is handed.
   switch (kind) {
     case SubjectKind::Float:
-      lv_subject_init_float(&entry->subject, 0.f);
+      entry->subject = lv_subject_create(LV_SUBJECT_TYPE_FLOAT);
       break;
     case SubjectKind::Int:
     case SubjectKind::Bool:
-      lv_subject_init_int(&entry->subject, 0);
+      entry->subject = lv_subject_create(LV_SUBJECT_TYPE_INT);
       break;
     case SubjectKind::String:
-      lv_subject_init_string(&entry->subject,
-                             entry->str_buf, entry->str_prev,
-                             sizeof(entry->str_buf), "");
+      entry->subject = lv_subject_create(LV_SUBJECT_TYPE_STRING);
+      if (entry->subject != nullptr) {
+        lv_subject_set_string_buffer_static(entry->subject, entry->str_buf,
+                                            entry->str_prev,
+                                            sizeof(entry->str_buf));
+      }
       break;
   }
-  lv_subject_t* out = &entry->subject;
+  if (entry->subject == nullptr) return nullptr;
+  lv_subject_t* out = entry->subject;
   map_.emplace(path, Slot{std::move(entry)});
   return out;
 }
@@ -85,7 +91,7 @@ lv_subject_t* SubjectRegistry::get_or_create(const std::string& path,
 lv_subject_t* SubjectRegistry::lookup(const std::string& path) const {
   auto it = map_.find(path);
   if (it == map_.end()) return nullptr;
-  return const_cast<lv_subject_t*>(&it->second.entry->subject);
+  return it->second.entry->subject;
 }
 
 std::vector<std::string> SubjectRegistry::paths() const {
@@ -95,12 +101,11 @@ std::vector<std::string> SubjectRegistry::paths() const {
   return out;
 }
 
-void SubjectRegistry::garbage_collect(const std::set<std::string>& live) {
-  for (auto it = map_.begin(); it != map_.end();) {
-    if (live.count(it->first) == 0) it = map_.erase(it);
-    else ++it;
-  }
-}
+// Like the firmware, subjects outlive layouts: widgets of the previous
+// layout may still observe one during the swap, and a STRING subject points
+// into its entry's buffers. The firmware only drops subscriptions here, and
+// WASM has none.
+void SubjectRegistry::garbage_collect(const std::set<std::string>&) {}
 
 SubjectRegistry& registry() {
   static SubjectRegistry r;
@@ -347,7 +352,9 @@ void put_null(const std::string& p) {
 void put_notification_ack(const std::string& path_after_prefix) {
   // In firmware this constructs an inbound SK delta. In WASM we
   // mirror the local-ack behavior so the alert overlay dismisses.
-  notifications().acknowledge(path_after_prefix);
+  // The result only steers the firmware's server delta; the local ack
+  // is all the preview needs.
+  (void)notifications().acknowledge(path_after_prefix);
 }
 
 // ----- stream client ----------------------------------------------------
