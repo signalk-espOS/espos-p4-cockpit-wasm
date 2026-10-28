@@ -27,8 +27,7 @@ set(FW_CHECKOUT "${CMAKE_SOURCE_DIR}/../espos-p4-cockpit" CACHE PATH
     "espos-p4-cockpit checkout to take LVGL, ArduinoJson and the JLP sources from")
 
 # LVGL source — share with the firmware checkout so we stay in lockstep.
-# ESP-IDF's component manager puts it in managed_components/; the old
-# .pio/libdeps path is from the PlatformIO era and no longer exists.
+# ESP-IDF's component manager puts it in managed_components/.
 set(LVGL_ROOT "${FW_CHECKOUT}/managed_components/lvgl__lvgl")
 if(NOT EXISTS "${LVGL_ROOT}/lvgl.h")
   message(FATAL_ERROR
@@ -49,7 +48,6 @@ target_include_directories(lvgl PUBLIC "${LVGL_ROOT}" "${LVGL_ROOT}/src")
 
 # Firmware sources we reuse verbatim (single source of truth: any
 # widget code change must benefit both target and preview).
-# main/jlp since the espOS port; it was src/jlp under PlatformIO.
 set(FW_ROOT     "${FW_CHECKOUT}/main/jlp")
 set(JSON_ROOT   "${FW_CHECKOUT}/managed_components/bblanchon__arduinojson/src")
 if(NOT EXISTS "${FW_ROOT}/widgets/widget_factory.cpp")

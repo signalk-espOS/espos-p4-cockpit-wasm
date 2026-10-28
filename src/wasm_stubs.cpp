@@ -2,8 +2,8 @@
 // against. Each function satisfies the public interface declared in
 // the corresponding firmware header (subject_registry.h,
 // zone_registry.h, notifications_registry.h, net/sk_put.h) but
-// substitutes in-process behavior for the SensESP / SignalK plumbing
-// the firmware uses.
+// substitutes in-process behavior for the espOS SignalK plumbing the
+// firmware uses.
 //
 // What's preserved:
 //   - The exact LVGL behavior (subjects feed values into lv_subject_*,
@@ -13,7 +13,7 @@
 //     same get_or_create cache).
 //
 // What's replaced:
-//   - SensESP SKValueListener / SKPutRequest -> no-op (PUTs are routed
+//   - espos_sk_subscribe / espos_sk_put -> no-op (PUTs are routed
 //     back to the JS bridge via puts_emit; SK reads come from
 //     subject_registry::feed_value which the bridge calls when the
 //     designer wants to simulate a new SK value).

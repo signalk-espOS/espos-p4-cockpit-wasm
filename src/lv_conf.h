@@ -1,7 +1,7 @@
 /* lv_conf.h for the LVGL-WASM JLP preview.
  *
  * MUST stay visually compatible with the firmware's lv_conf.h
- * (sensesp-cockpit-display/lv_conf.h) — color depth, theme, font
+ * (components/cockpit_hal/lv_conf.h) — color depth, theme, font
  * sizes. Anything that affects pixel output. Backend/platform
  * knobs (color format alignment, tick source, draw cache size) are
  * tuned for browser/SDL instead of the P4 panel.
