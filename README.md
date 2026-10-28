@@ -24,15 +24,16 @@ device) is the fallback when a panel happens to be connected.
   designer page for input.
 - `src/wasm_stubs.cpp` — in-process implementations of the firmware's
   `SubjectRegistry`, `ZoneRegistry`, `NotificationsRegistry`,
-  `net/sk_put.h`. Identical interfaces, no SensESP / SignalK
+  `net/sk_put.h`. Identical interfaces, no espOS / SignalK
   plumbing — values come from JS via `jlp_set_value_*`.
 - `src/lv_conf.h` — LVGL config mirroring the firmware's
-  `sensesp-cockpit-display/lv_conf.h`. Anything pixel-affecting
+  `components/cockpit_hal/lv_conf.h`. Anything pixel-affecting
   (color depth, theme, fonts, `LV_USE_FLOAT`) must stay in lockstep.
 - `public/` — build output (`jlp_wasm.js`, `jlp_wasm.wasm`) + a
   standalone `index.html` smoke test.
 - `CMakeLists.txt` — pulls LVGL + `widget_factory.cpp` from the
-  firmware's local PIO checkout, so versions never drift.
+  firmware's ESP-IDF checkout (`managed_components/`, `main/jlp/`),
+  so versions never drift.
 
 ## Build
 

@@ -10,12 +10,12 @@ firmware draws — no device required.
 ## Architecture invariants
 
 1. **No source forks.** `CMakeLists.txt` pulls LVGL and
-   `widget_factory.cpp` straight out of the firmware's PIO checkout.
+   `widget_factory.cpp` straight out of the firmware's ESP-IDF checkout.
    Any time we edit them in the firmware repo this build picks the
    changes up automatically. Don't copy files in here.
 2. **Two files DO need lockstep maintenance** with the firmware:
    - `src/lv_conf.h` mirrors the firmware's
-     `sensesp-cockpit-display/lv_conf.h`. Anything pixel-affecting
+     `components/cockpit_hal/lv_conf.h`. Anything pixel-affecting
      (color depth, theme, fonts, `LV_USE_FLOAT`) must match.
    - `src/wasm_stubs.cpp::color_for_state` must match firmware
      `zone_registry.cpp::color_for_state` — the maritime palette
@@ -32,7 +32,7 @@ firmware draws — no device required.
 | [src/main.cpp](src/main.cpp)      | JS bridge: `jlp_init`, `jlp_apply_layout`, `jlp_set_value_*`, `jlp_set_path_meta`, `jlp_set_notifications` |
 | [src/wasm_stubs.cpp](src/wasm_stubs.cpp) | In-process stand-ins for SubjectRegistry / ZoneRegistry / NotificationsRegistry / sk_put |
 | [src/lv_conf.h](src/lv_conf.h)    | LVGL config — must mirror firmware                   |
-| [CMakeLists.txt](CMakeLists.txt)  | Source paths into the firmware's PIO checkout        |
+| [CMakeLists.txt](CMakeLists.txt)  | Source paths into the firmware's ESP-IDF checkout    |
 
 ## Build
 
