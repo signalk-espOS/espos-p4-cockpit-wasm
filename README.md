@@ -16,7 +16,7 @@ device) is the fallback when a panel happens to be connected.
 
 ## Layout
 
-- `src/main.cpp` — JS bridge: `jlp_init(w, h)`,
+- `src/main.cpp` — JS bridge: `jlp_init(w, h)`, `jlp_resize(w, h)`,
   `jlp_apply_layout(json)`, `jlp_set_value_float/int/bool(path, v)`,
   `jlp_set_path_meta(path, meta_json)` (zones + description),
   `jlp_set_notifications(snapshot_json)`. Disables SDL's
@@ -66,6 +66,9 @@ import createJlpWasm from './jlp_wasm.js'
 const mod = await createJlpWasm({ canvas: document.querySelector('#mycanvas') })
 
 mod._jlp_init(1024, 600)
+
+// later, when the device turns out to be another size
+mod._jlp_resize(320, 240)  // 0 on success, -1 before jlp_init
 
 // allocate UTF-8 for a C string
 const layout = JSON.stringify({ schema: 1, name: 'x', screens: [{ ... }] })

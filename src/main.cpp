@@ -5,6 +5,7 @@
 //
 // JS bridge:
 //   jlp_init(w, h)                — set up LVGL + SDL window (canvas).
+//   jlp_resize(w, h)              — follow a device of another size.
 //   jlp_apply_layout(json)        — render the layout, return "" on
 //                                   success or a UTF-8 error string.
 //   jlp_set_value_float(p, v)     — push a simulated SK float.
@@ -78,6 +79,25 @@ int jlp_init(int w, int h) {
   lv_obj_t* scr = lv_screen_active();
   lv_obj_set_style_bg_color(scr, lv_color_hex(0x0d1117), LV_PART_MAIN);
   emscripten_request_animation_frame_loop(frame, nullptr);
+  return 0;
+}
+
+// jlp_init runs once per page, usually before the designer knows which
+// device it talks to, and SDL stays bound to that first window. A panel
+// of another size (a 320x240 M5Stack Tough after the 1024x600 default)
+// then left the canvas resized by the page but LVGL still drawing the
+// old resolution: an empty preview. The SDL driver resizes its buffers,
+// texture and window on LV_EVENT_RESOLUTION_CHANGED.
+EMSCRIPTEN_KEEPALIVE
+int jlp_resize(int w, int h) {
+  if (!disp) return -1;
+  if (w <= 0 || h <= 0) return -2;
+  if (lv_display_get_horizontal_resolution(disp) == w &&
+      lv_display_get_vertical_resolution(disp) == h) {
+    return 0;
+  }
+  lv_display_set_resolution(disp, w, h);
+  lv_obj_invalidate(lv_screen_active());
   return 0;
 }
 
