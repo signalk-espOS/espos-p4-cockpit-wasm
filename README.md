@@ -19,7 +19,9 @@ device) is the fallback when a panel happens to be connected.
 - `src/main.cpp` — JS bridge: `jlp_init(w, h)`,
   `jlp_apply_layout(json)`, `jlp_set_value_float/int/bool(path, v)`,
   `jlp_set_path_meta(path, meta_json)` (zones + description),
-  `jlp_set_notifications(snapshot_json)`. Disables SDL's
+  `jlp_set_notifications(snapshot_json)`, `jlp_set_theme(mode)`
+  (`auto`, `day`, `dark` or `night`, as the panel's own setting would
+  pick it; rebuilds the last layout). Disables SDL's
   global keyboard / mouse capture so the canvas doesn't fight the
   designer page for input.
 - `src/wasm_stubs.cpp` — in-process implementations of the firmware's

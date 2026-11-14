@@ -23,6 +23,7 @@
 
 #include "subject_registry.h"
 #include "zone_registry.h"
+#include "theme.h"
 #include "notifications_registry.h"
 #include "net/sk_put.h"
 #include "audio/voice_control.h"
@@ -39,6 +40,7 @@
 
 #include "lvgl.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -183,17 +185,17 @@ ZoneRegistry& zones() {
 }
 
 uint32_t color_for_state(ZoneState s) {
-  // Maritime-helm palette: one step warmer than SK spec defaults.
   // KEEP IN LOCKSTEP with firmware zone_registry.cpp:color_for_state.
+  // The shades come from the theme header both builds share.
   switch (s) {
     case ZoneState::Nominal:
-    case ZoneState::Normal:    return 0x3fb950;  // green
-    case ZoneState::Alert:     return 0xd29922;  // yellow
-    case ZoneState::Warn:      return 0xfb8500;  // orange
-    case ZoneState::Alarm:     return 0xf85149;  // red
-    case ZoneState::Emergency: return 0xa371f7;  // purple
+    case ZoneState::Normal:    return theme::state_color(0);
+    case ZoneState::Alert:     return theme::state_color(1);
+    case ZoneState::Warn:      return theme::state_color(2);
+    case ZoneState::Alarm:     return theme::state_color(3);
+    case ZoneState::Emergency: return theme::state_color(4);
   }
-  return 0x8b949e;
+  return theme::state_color(1);
 }
 
 // ----- NotificationsRegistry --------------------------------------------
@@ -349,12 +351,12 @@ void put_string(const std::string& p, const std::string& v) {
 void put_null(const std::string& p) {
   last_puts()[p] = {"null", "null"};
 }
-void put_notification_ack(const std::string& path_after_prefix) {
+bool put_notification_ack(const std::string& path_after_prefix) {
   // In firmware this constructs an inbound SK delta. In WASM we
   // mirror the local-ack behavior so the alert overlay dismisses.
   // The result only steers the firmware's server delta; the local ack
   // is all the preview needs.
-  (void)notifications().acknowledge(path_after_prefix);
+  return notifications().acknowledge(path_after_prefix);
 }
 
 // ----- stream client ----------------------------------------------------
