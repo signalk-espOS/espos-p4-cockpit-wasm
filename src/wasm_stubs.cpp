@@ -40,6 +40,7 @@
 
 #include "lvgl.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <functional>
