@@ -76,10 +76,14 @@ int jlp_init(int w, int h) {
   SDL_EventState(SDL_MOUSEBUTTONUP,   SDL_DISABLE);
   SDL_EventState(SDL_MOUSEWHEEL,      SDL_DISABLE);
   lv_obj_t* scr = lv_screen_active();
-  lv_obj_set_style_bg_color(scr, lv_color_hex(0x0d1117), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(scr, lv_color_hex(jlp::theme::palette().screen),
+                            LV_PART_MAIN);
   emscripten_request_animation_frame_loop(frame, nullptr);
   return 0;
 }
+
+// The last layout applied, so a theme switch can rebuild it.
+static std::string last_layout;
 
 EMSCRIPTEN_KEEPALIVE
 const char* jlp_apply_layout(const char* json) {
@@ -117,20 +121,23 @@ const char* jlp_apply_layout(const char* json) {
     return err_storage.c_str();
   }
   // The layout's `theme`, handled as layout_manager.cpp does on the
-  // device: `bg` paints the root (left transparent when omitted, so the
-  // dark default shows through), and apply_theme() sets the default
-  // fg/accent before any widget is built so they pick it up. A failed
-  // build puts the previous theme back, since the previous layout stays
-  // on screen and its widgets read the globals at update time.
+  // device: apply_theme() sets the mode and the default fg/accent before
+  // any widget is built, then the root takes the palette's screen color,
+  // or `theme.bg` except at night. A failed build puts the previous
+  // theme back, since the previous layout stays on screen and its
+  // widgets read the globals at update time.
   JsonObjectConst theme = doc["theme"];
-  uint32_t theme_bg = 0;
-  if (!theme.isNull() &&
-      jlp::parse_hex_color(theme["bg"] | (const char*)nullptr, &theme_bg)) {
-    lv_obj_set_style_bg_color(staging, lv_color_hex(theme_bg), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(staging, LV_OPA_COVER, LV_PART_MAIN);
-  }
   const jlp::ThemeColors prev_theme = jlp::current_theme();
   jlp::apply_theme(theme);
+  const jlp::theme::Palette& pal = jlp::theme::palette();
+  uint32_t screen_bg = pal.screen;
+  uint32_t theme_bg = 0;
+  if (pal.mode != jlp::theme::Mode::Night && !theme.isNull() &&
+      jlp::parse_hex_color(theme["bg"] | (const char*)nullptr, &theme_bg)) {
+    screen_bg = theme_bg;
+  }
+  lv_obj_set_style_bg_color(staging, lv_color_hex(screen_bg), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(staging, LV_OPA_COVER, LV_PART_MAIN);
 
   JsonArrayConst widgets = screens[0]["widgets"];
   std::set<std::string> live_paths;
@@ -152,8 +159,32 @@ const char* jlp_apply_layout(const char* json) {
   lv_obj_clear_flag(staging, LV_OBJ_FLAG_HIDDEN);
   if (current_root) lv_obj_delete(current_root);
   current_root = staging;
+  lv_obj_set_style_bg_color(screen, lv_color_hex(pal.screen), LV_PART_MAIN);
+  if (json != last_layout.c_str()) last_layout = json;
 
   return "";  // success
+}
+
+// The panel's theme for the preview, as the panel's own setting would
+// pick it: "auto", "day", "dark" or "night". Rebuilds the last layout.
+// Returns "" on success, or why not.
+EMSCRIPTEN_KEEPALIVE
+const char* jlp_set_theme(const char* mode) {
+  jlp::theme::Mode m;
+  if (!jlp::theme::parse_mode(mode, &m)) return "unknown theme";
+  if (m == jlp::theme::g_panel_choice) return "";
+  const jlp::theme::Mode prev = jlp::theme::g_panel_choice;
+  jlp::theme::g_panel_choice = m;
+  if (last_layout.empty()) return "";
+  // A copy: the apply stores the JSON it was given into last_layout.
+  const std::string json = last_layout;
+  const char* err = jlp_apply_layout(json.c_str());
+  // The previous layout stays up on a failed build, so keep its theme.
+  if (*err) {
+    jlp::theme::g_panel_choice = prev;
+    jlp::theme::sync_lvgl_theme();
+  }
+  return err;
 }
 
 EMSCRIPTEN_KEEPALIVE

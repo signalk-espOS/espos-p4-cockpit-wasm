@@ -18,8 +18,9 @@ firmware draws — no device required.
      `components/cockpit_hal/lv_conf.h`. Anything pixel-affecting
      (color depth, theme, fonts, `LV_USE_FLOAT`) must match.
    - `src/wasm_stubs.cpp::color_for_state` must match firmware
-     `zone_registry.cpp::color_for_state` — the maritime palette
-     lives in two places, by design (no shared dep).
+     `zone_registry.cpp::color_for_state`. Both take their shades from
+     the firmware's header-only `main/jlp/theme.h`, so the palettes
+     themselves live in one place.
 3. **Not a runtime.** No SK websocket, no PUTs, no notification
    registry consumer. JS feeds simulated values via the `jlp_set_*`
    bridge functions.
