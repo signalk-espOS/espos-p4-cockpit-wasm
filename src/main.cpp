@@ -5,6 +5,7 @@
 //
 // JS bridge:
 //   jlp_init(w, h)                — set up LVGL + SDL window (canvas).
+//   jlp_resize(w, h)              — follow a device of another size.
 //   jlp_apply_layout(json)        — render the layout, return "" on
 //                                   success or a UTF-8 error string.
 //   jlp_set_value_float(p, v)     — push a simulated SK float.
@@ -90,6 +91,41 @@ int jlp_init(int w, int h) {
 
 // The last layout applied, so a theme switch can rebuild it.
 static std::string last_layout;
+
+// jlp_init runs once per page, usually before the designer knows which
+// device it talks to, and SDL stays bound to that first window. A panel
+// of another size (a 320x240 M5Stack Tough after the 1024x600 default)
+// then left the canvas resized by the page but LVGL still drawing the
+// old resolution: an empty preview. The SDL driver resizes its buffers,
+// texture and window on LV_EVENT_RESOLUTION_CHANGED. A layout already
+// applied is rebuilt, as on a theme switch: its pages were sized from the
+// old resolution.
+const char* jlp_apply_layout(const char* json);
+
+EMSCRIPTEN_KEEPALIVE
+int jlp_resize(int w, int h) {
+  if (!disp) return -1;
+  if (w <= 0 || h <= 0) return -2;
+  if (lv_display_get_horizontal_resolution(disp) == w &&
+      lv_display_get_vertical_resolution(disp) == h) {
+    return 0;
+  }
+  const int32_t old_w = lv_display_get_horizontal_resolution(disp);
+  const int32_t old_h = lv_display_get_vertical_resolution(disp);
+  lv_display_set_resolution(disp, w, h);
+  if (!last_layout.empty()) {
+    // A copy: the apply stores the JSON it was given into last_layout.
+    const std::string json = last_layout;
+    if (*jlp_apply_layout(json.c_str()) != '\0') {
+      // The previous layout stays up; so does its size, and a retry of
+      // the same size rebuilds again instead of returning early.
+      lv_display_set_resolution(disp, old_w, old_h);
+      return -3;
+    }
+  }
+  lv_obj_invalidate(lv_screen_active());
+  return 0;
+}
 
 EMSCRIPTEN_KEEPALIVE
 const char* jlp_apply_layout(const char* json) {
