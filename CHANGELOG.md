@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.0 (2026-11-18)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Other
+* feat: add jlp_resize for devices of another size by @Colug0 in https://github.com/signalk-espOS/espos-p4-cockpit-wasm/pull/23
+
+## New Contributors
+* @Colug0 made their first contribution in https://github.com/signalk-espOS/espos-p4-cockpit-wasm/pull/23
+
+**Full Changelog**: https://github.com/signalk-espOS/espos-p4-cockpit-wasm/compare/v1.1.0...v1.2.0
+
 ## 1.1.0 (2026-11-14)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
