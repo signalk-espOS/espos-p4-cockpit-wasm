@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.1 (2026-11-19)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+
+
+**Full Changelog**: https://github.com/signalk-espOS/espos-p4-cockpit-wasm/compare/v1.2.0...v1.2.1
+
 ## 1.2.0 (2026-11-18)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
