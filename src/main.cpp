@@ -134,6 +134,7 @@ static std::string last_layout;
 static jlp::LayoutPlayer* player = nullptr;
 static lv_obj_t* run_parent = nullptr;
 static std::string run_layout;
+static int run_top = 0;  // the status strip's height while the layout keeps it
 const char* jlp_run_layout(const char* json);
 
 // jlp_init runs once per page, usually before the designer knows which
@@ -157,16 +158,11 @@ int jlp_resize(int w, int h) {
   const int32_t old_w = lv_display_get_horizontal_resolution(disp);
   const int32_t old_h = lv_display_get_vertical_resolution(disp);
   lv_display_set_resolution(disp, w, h);
-  if (player != nullptr && !run_layout.empty()) {
-    const std::string json = run_layout;
-    const std::string screen = player->active_screen();
-    if (*jlp_run_layout(json.c_str()) != '\0') {
-      lv_display_set_resolution(disp, old_w, old_h);
-      return -3;
-    }
-    // Back to the tab shown; screens without an id cannot be told apart
-    // from outside the player and start on the first.
-    if (!screen.empty()) player->select_screen(screen);
+  if (player != nullptr) {
+    // The running tree is sized in percent of its parent, so only the
+    // parent follows the new size: no rebuild, and the shown tab stays,
+    // whether or not the screens have ids.
+    lv_obj_set_size(run_parent, lv_pct(100), h - run_top);
   } else if (!last_layout.empty()) {
     // A copy: the apply stores the JSON it was given into last_layout.
     const std::string json = last_layout;
@@ -327,6 +323,7 @@ const char* jlp_run_layout(const char* json) {
     player->init(run_parent, [](JsonObjectConst doc, bool) {
       const bool strip = doc["status_overlay"] | true;
       const int top = strip ? kStatusStripHeight : 0;
+      run_top = top;
       lv_obj_set_pos(run_parent, 0, top);
       lv_obj_set_size(run_parent, lv_pct(100),
                       lv_display_get_vertical_resolution(disp) - top);
