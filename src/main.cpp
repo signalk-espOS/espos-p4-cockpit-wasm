@@ -60,10 +60,11 @@ static lv_obj_t*     current_root = nullptr;
 struct PointerEvent {
   lv_point_t at;
   bool down;
+  bool move;  // a drag position after the press, safe to overwrite
 };
 static lv_indev_t* pointer = nullptr;
 static std::deque<PointerEvent> pointer_events;
-static PointerEvent pointer_last{{0, 0}, false};
+static PointerEvent pointer_last{{0, 0}, false, false};
 
 static void read_pointer(lv_indev_t*, lv_indev_data_t* data) {
   if (!pointer_events.empty()) {
@@ -85,10 +86,18 @@ static constexpr int kStatusStripHeight = 28;
 // throttled tab would otherwise run the swipe, peek and toggle snap-back
 // timers at the wrong speed.
 static EM_BOOL frame(double t, void*) {
-  static double last = t;
-  const double elapsed = t - last;
-  last = t;
-  if (elapsed > 0) lv_tick_inc(static_cast<uint32_t>(elapsed + 0.5));
+  // Whole milliseconds are counted from the first frame, so the fraction
+  // a frame drops is carried into the next one instead of lost.
+  static const double start = t;
+  static uint64_t ticked = 0;
+  const double elapsed = t - start;
+  if (elapsed > 0) {
+    const uint64_t now = static_cast<uint64_t>(elapsed);
+    if (now > ticked) {
+      lv_tick_inc(static_cast<uint32_t>(now - ticked));
+      ticked = now;
+    }
+  }
   lv_timer_handler();
   return EM_TRUE;
 }
@@ -362,14 +371,18 @@ int jlp_select_screen(const char* id) {
 // Touch at (x, y) in display pixels. LVGL reads it on the next frame.
 EMSCRIPTEN_KEEPALIVE
 void jlp_pointer(int x, int y, int pressed) {
-  // A drag only needs its latest position; a press or release is kept.
+  // A drag only needs its latest position; the press keeps where it
+  // landed, and a release is kept.
   const bool down = pressed != 0;
-  if (!pointer_events.empty() && pointer_events.back().down && down) {
+  const bool held = pointer_events.empty() ? pointer_last.down
+                                           : pointer_events.back().down;
+  const bool move = down && held;
+  if (move && !pointer_events.empty() && pointer_events.back().move) {
     pointer_events.back().at = {x, y};
     return;
   }
   if (pointer_events.size() >= 64) pointer_events.pop_front();
-  pointer_events.push_back({{x, y}, down});
+  pointer_events.push_back({{x, y}, down, move});
 }
 
 // The firmware's /hello widget catalog, so a browser display offers the
