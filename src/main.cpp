@@ -27,6 +27,7 @@
 #include <emscripten/html5.h>
 #include <emscripten/bind.h>
 
+#include <deque>
 #include <set>
 #include <string>
 
@@ -55,13 +56,23 @@ static lv_obj_t*     current_root = nullptr;
 
 // Touch for a browser display. The page feeds it through jlp_pointer;
 // the designer never does, so its preview stays inert.
+// Events queue up so a tap shorter than LVGL's read period still lands.
+struct PointerEvent {
+  lv_point_t at;
+  bool down;
+};
 static lv_indev_t* pointer = nullptr;
-static lv_point_t  pointer_at{};
-static bool        pointer_down = false;
+static std::deque<PointerEvent> pointer_events;
+static PointerEvent pointer_last{{0, 0}, false};
 
 static void read_pointer(lv_indev_t*, lv_indev_data_t* data) {
-  data->point = pointer_at;
-  data->state = pointer_down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+  if (!pointer_events.empty()) {
+    pointer_last = pointer_events.front();
+    pointer_events.pop_front();
+  }
+  data->point = pointer_last.at;
+  data->state = pointer_last.down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+  data->continue_reading = !pointer_events.empty();
 }
 
 // Height of the panel's status strip (firmware status_overlay.cpp,
@@ -70,9 +81,14 @@ static void read_pointer(lv_indev_t*, lv_indev_data_t* data) {
 // itself over this canvas.
 static constexpr int kStatusStripHeight = 28;
 
+// LVGL time follows the clock, not the frame rate: a 120 Hz screen or a
+// throttled tab would otherwise run the swipe, peek and toggle snap-back
+// timers at the wrong speed.
 static EM_BOOL frame(double t, void*) {
-  (void)t;
-  lv_tick_inc(16);
+  static double last = t;
+  const double elapsed = t - last;
+  last = t;
+  if (elapsed > 0) lv_tick_inc(static_cast<uint32_t>(elapsed + 0.5));
   lv_timer_handler();
   return EM_TRUE;
 }
@@ -148,6 +164,8 @@ int jlp_resize(int w, int h) {
       lv_display_set_resolution(disp, old_w, old_h);
       return -3;
     }
+    // Back to the tab shown; screens without an id cannot be told apart
+    // from outside the player and start on the first.
     if (!screen.empty()) player->select_screen(screen);
   } else if (!last_layout.empty()) {
     // A copy: the apply stores the JSON it was given into last_layout.
@@ -295,12 +313,8 @@ const char* jlp_run_layout(const char* json) {
   static std::string err_storage;
   if (!disp) return "jlp_init not called";
   lv_obj_t* screen = lv_screen_active();
-  if (player == nullptr) {
-    if (current_root) {
-      lv_obj_delete(current_root);
-      current_root = nullptr;
-      last_layout.clear();
-    }
+  const bool first = player == nullptr;
+  if (first) {
     run_parent = lv_obj_create(screen);
     lv_obj_set_style_bg_opa(run_parent, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(run_parent, 0, LV_PART_MAIN);
@@ -320,8 +334,20 @@ const char* jlp_run_layout(const char* json) {
   }
   jlp::LayoutPlayer::Result r = player->apply(json);
   if (!r.ok) {
+    // A first layout that fails leaves the preview as it was.
+    if (first) {
+      delete player;
+      player = nullptr;
+      lv_obj_delete(run_parent);
+      run_parent = nullptr;
+    }
     err_storage = r.err;
     return err_storage.c_str();
+  }
+  if (first && current_root) {
+    lv_obj_delete(current_root);
+    current_root = nullptr;
+    last_layout.clear();
   }
   if (json != run_layout.c_str()) run_layout = json;
   lv_obj_set_style_bg_color(screen, lv_color_hex(jlp::theme::palette().screen),
@@ -339,9 +365,14 @@ int jlp_select_screen(const char* id) {
 // Touch at (x, y) in display pixels. LVGL reads it on the next frame.
 EMSCRIPTEN_KEEPALIVE
 void jlp_pointer(int x, int y, int pressed) {
-  pointer_at.x = x;
-  pointer_at.y = y;
-  pointer_down = pressed != 0;
+  // A drag only needs its latest position; a press or release is kept.
+  const bool down = pressed != 0;
+  if (!pointer_events.empty() && pointer_events.back().down && down) {
+    pointer_events.back().at = {x, y};
+    return;
+  }
+  if (pointer_events.size() >= 64) pointer_events.pop_front();
+  pointer_events.push_back({{x, y}, down});
 }
 
 // The firmware's /hello widget catalog, so a browser display offers the

@@ -13,10 +13,9 @@
 //     same get_or_create cache).
 //
 // What's replaced:
-//   - espos_sk_subscribe / espos_sk_put -> no-op (PUTs are routed
-//     back to the JS bridge via puts_emit; SK reads come from
-//     subject_registry::feed_value which the bridge calls when the
-//     designer wants to simulate a new SK value).
+//   - espos_sk_subscribe -> no-op; values come in through the
+//     jlp_set_value_* bridge. espos_sk_put -> Module.jlpPut on the page
+//     (jlp_emit_put below), when the page has one.
 //   - WS notifications.* delta consumer -> in-memory snapshot the JS
 //     bridge populates from a JSON blob.
 //   - Zone meta delivery -> JS-supplied table per path.
@@ -331,15 +330,24 @@ void drop_anchor_here() {}
 
 }  // namespace jlp
 
+// The callbacks run after the LVGL event that caused them: a page that
+// throws, or applies another layout from inside them, must not unwind
+// through lv_timer_handler or delete the widget still handling the tap.
 EM_JS(void, jlp_emit_put, (const char* path, const char* json), {
-  if (typeof Module.jlpPut === "function") {
-    Module.jlpPut(UTF8ToString(path), UTF8ToString(json));
-  }
+  if (typeof Module.jlpPut !== "function") return;
+  const p = UTF8ToString(path);
+  const v = UTF8ToString(json);
+  setTimeout(() => {
+    try { Module.jlpPut(p, v); } catch (e) { console.error("jlpPut", e); }
+  }, 0);
 });
 
 EM_JS(int, jlp_emit_ack, (const char* path), {
   if (typeof Module.jlpAck !== "function") return 0;
-  Module.jlpAck(UTF8ToString(path));
+  const p = UTF8ToString(path);
+  setTimeout(() => {
+    try { Module.jlpAck(p); } catch (e) { console.error("jlpAck", e); }
+  }, 0);
   return 1;
 });
 
