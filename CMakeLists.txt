@@ -53,12 +53,18 @@ set(JSON_ROOT   "${FW_CHECKOUT}/managed_components/bblanchon__arduinojson/src")
 if(NOT EXISTS "${FW_ROOT}/widgets/widget_factory.cpp")
   message(FATAL_ERROR "widget_factory.cpp not found at ${FW_ROOT}")
 endif()
+if(NOT EXISTS "${FW_ROOT}/layout/layout_player.cpp")
+  message(FATAL_ERROR
+    "layout_player.cpp not found at ${FW_ROOT}/layout: the runtime needs "
+    "espos-p4-cockpit with the shared LayoutPlayer (#225).")
+endif()
 if(NOT EXISTS "${JSON_ROOT}/ArduinoJson.h")
   message(FATAL_ERROR "ArduinoJson not found at ${JSON_ROOT} — build the firmware once.")
 endif()
 
 add_library(jlp_widgets STATIC
   "${FW_ROOT}/widgets/widget_factory.cpp"
+  "${FW_ROOT}/layout/layout_player.cpp"
   "${CMAKE_SOURCE_DIR}/src/wasm_stubs.cpp")
 target_include_directories(jlp_widgets PUBLIC
   # Shim dir first: satisfies notifications_registry.h's vestigial
@@ -98,7 +104,7 @@ target_link_options(jlp_wasm PRIVATE
   "-sINITIAL_MEMORY=33554432"
   "-sALLOW_MEMORY_GROWTH=1"
   "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','HEAPU8','UTF8ToString','stringToUTF8','lengthBytesUTF8','allocateUTF8']"
-  "-sEXPORTED_FUNCTIONS=['_jlp_init','_jlp_resize','_jlp_apply_layout','_jlp_set_value_float','_jlp_set_value_int','_jlp_set_value_bool','_jlp_set_path_meta','_jlp_set_notifications','_jlp_set_theme','_malloc','_free']"
+  "-sEXPORTED_FUNCTIONS=['_jlp_init','_jlp_resize','_jlp_apply_layout','_jlp_set_value_float','_jlp_set_value_int','_jlp_set_value_bool','_jlp_set_path_meta','_jlp_set_notifications','_jlp_set_theme','_jlp_run_layout','_jlp_select_screen','_jlp_pointer','_jlp_widget_catalog','_malloc','_free']"
   "-sNO_EXIT_RUNTIME=1"
   "-sINVOKE_RUN=0"
   "-sMODULARIZE=1"
