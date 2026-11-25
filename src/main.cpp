@@ -12,16 +12,22 @@
 //   jlp_set_value_int  (p, v)     — push a simulated SK int.
 //   jlp_set_value_bool (p, b)     — push a simulated SK bool.
 //
-// We deliberately don't import LayoutManager itself: the firmware's
-// version pulls in LittleFS persistence and the post-swap WS restart
-// hook, neither of which makes sense in a browser. The pipeline here
-// is the same shape — staging parent, build, atomic swap, delete old
-// — but everything else is intentionally trimmed.
+// jlp_apply_layout is the designer's preview: the first screen only,
+// no tab strip, no input. A browser display (signalk-espos-hmi) runs
+// the layout instead, through the firmware's own LayoutPlayer:
+//   jlp_run_layout(json)          — every screen, tab strip, swipes.
+//   jlp_select_screen(id)         — show a screen as a tab tap would.
+//   jlp_pointer(x, y, pressed)    — touch in, in display pixels.
+//   jlp_widget_catalog()          — the kinds and fields this build has.
+// Writes leave through Module.jlpPut / Module.jlpAck (wasm_stubs.cpp).
+// LayoutManager itself stays out: persistence, the status strip and the
+// device overlays belong to the panel.
 
 #include <emscripten.h>
 #include <emscripten/html5.h>
 #include <emscripten/bind.h>
 
+#include <deque>
 #include <set>
 #include <string>
 
@@ -42,9 +48,33 @@
 #include "zone_registry.h"
 #include "notifications_registry.h"
 #include "widgets/widget_factory.h"
+#include "widgets/widget_catalog.h"
+#include "layout/layout_player.h"
 
 static lv_display_t* disp = nullptr;
 static lv_obj_t*     current_root = nullptr;
+
+// Touch for a browser display. The page feeds it through jlp_pointer;
+// the designer never does, so its preview stays inert.
+// Events queue up so a tap shorter than LVGL's read period still lands.
+struct PointerEvent {
+  lv_point_t at;
+  bool down;
+  bool move;  // a drag position after the press, safe to overwrite
+};
+static lv_indev_t* pointer = nullptr;
+static std::deque<PointerEvent> pointer_events;
+static PointerEvent pointer_last{{0, 0}, false, false};
+
+static void read_pointer(lv_indev_t*, lv_indev_data_t* data) {
+  if (!pointer_events.empty()) {
+    pointer_last = pointer_events.front();
+    pointer_events.pop_front();
+  }
+  data->point = pointer_last.at;
+  data->state = pointer_last.down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+  data->continue_reading = !pointer_events.empty();
+}
 
 // Height of the panel's status strip (firmware status_overlay.cpp,
 // kStripHeight). The panel puts every page below it, so a widget's y is
@@ -52,9 +82,22 @@ static lv_obj_t*     current_root = nullptr;
 // itself over this canvas.
 static constexpr int kStatusStripHeight = 28;
 
+// LVGL time follows the clock, not the frame rate: a 120 Hz screen or a
+// throttled tab would otherwise run the swipe, peek and toggle snap-back
+// timers at the wrong speed.
 static EM_BOOL frame(double t, void*) {
-  (void)t;
-  lv_tick_inc(16);
+  // Whole milliseconds are counted from the first frame, so the fraction
+  // a frame drops is carried into the next one instead of lost.
+  static const double start = t;
+  static uint64_t ticked = 0;
+  const double elapsed = t - start;
+  if (elapsed > 0) {
+    const uint64_t now = static_cast<uint64_t>(elapsed);
+    if (now > ticked) {
+      lv_tick_inc(static_cast<uint32_t>(now - ticked));
+      ticked = now;
+    }
+  }
   lv_timer_handler();
   return EM_TRUE;
 }
@@ -82,6 +125,10 @@ int jlp_init(int w, int h) {
   SDL_EventState(SDL_MOUSEBUTTONDOWN, SDL_DISABLE);
   SDL_EventState(SDL_MOUSEBUTTONUP,   SDL_DISABLE);
   SDL_EventState(SDL_MOUSEWHEEL,      SDL_DISABLE);
+  // Before any LayoutPlayer: it watches presses on the first input device.
+  pointer = lv_indev_create();
+  lv_indev_set_type(pointer, LV_INDEV_TYPE_POINTER);
+  lv_indev_set_read_cb(pointer, read_pointer);
   lv_obj_t* scr = lv_screen_active();
   lv_obj_set_style_bg_color(scr, lv_color_hex(jlp::theme::palette().screen),
                             LV_PART_MAIN);
@@ -91,6 +138,13 @@ int jlp_init(int w, int h) {
 
 // The last layout applied, so a theme switch can rebuild it.
 static std::string last_layout;
+
+// The running layout of a browser display, once jlp_run_layout was called.
+static jlp::LayoutPlayer* player = nullptr;
+static lv_obj_t* run_parent = nullptr;
+static std::string run_layout;
+static int run_top = 0;  // the status strip's height while the layout keeps it
+const char* jlp_run_layout(const char* json);
 
 // jlp_init runs once per page, usually before the designer knows which
 // device it talks to, and SDL stays bound to that first window. A panel
@@ -113,7 +167,12 @@ int jlp_resize(int w, int h) {
   const int32_t old_w = lv_display_get_horizontal_resolution(disp);
   const int32_t old_h = lv_display_get_vertical_resolution(disp);
   lv_display_set_resolution(disp, w, h);
-  if (!last_layout.empty()) {
+  if (player != nullptr) {
+    // The running tree is sized in percent of its parent, so only the
+    // parent follows the new size: no rebuild, and the shown tab stays,
+    // whether or not the screens have ids.
+    lv_obj_set_size(run_parent, lv_pct(100), h - run_top);
+  } else if (!last_layout.empty()) {
     // A copy: the apply stores the JSON it was given into last_layout.
     const std::string json = last_layout;
     if (*jlp_apply_layout(json.c_str()) != '\0') {
@@ -141,6 +200,10 @@ const char* jlp_apply_layout(const char* json) {
   }
 
   lv_obj_t* screen = lv_screen_active();
+  if (player != nullptr) {
+    err_storage = "a layout is running";
+    return err_storage.c_str();
+  }
   lv_obj_t* staging = lv_obj_create(screen);
   // status_overlay defaults to true on the panel (layout_manager.cpp).
   const bool strip = doc["status_overlay"] | true;
@@ -220,6 +283,20 @@ const char* jlp_set_theme(const char* mode) {
   if (m == jlp::theme::g_panel_choice) return "";
   const jlp::theme::Mode prev = jlp::theme::g_panel_choice;
   jlp::theme::g_panel_choice = m;
+  if (player != nullptr) {
+    static std::string err_storage;
+    jlp::LayoutPlayer::Result r = player->rebuild_for_theme();
+    if (!r.ok) {
+      jlp::theme::g_panel_choice = prev;
+      jlp::theme::sync_lvgl_theme();
+      err_storage = r.err;
+      return err_storage.c_str();
+    }
+    lv_obj_set_style_bg_color(lv_screen_active(),
+                              lv_color_hex(jlp::theme::palette().screen),
+                              LV_PART_MAIN);
+    return "";
+  }
   if (last_layout.empty()) return "";
   // A copy: the apply stores the JSON it was given into last_layout.
   const std::string json = last_layout;
@@ -231,6 +308,87 @@ const char* jlp_set_theme(const char* mode) {
   }
   return err;
 }
+
+// Runs `json` as the panel does: every screen with its tab strip and page
+// swipes, built and swapped by the firmware's LayoutPlayer. Returns "" on
+// success or why not; a failed layout leaves the previous one running.
+// The designer's single-screen preview is gone from then on.
+EMSCRIPTEN_KEEPALIVE
+const char* jlp_run_layout(const char* json) {
+  static std::string err_storage;
+  if (!disp) return "jlp_init not called";
+  lv_obj_t* screen = lv_screen_active();
+  const bool first = player == nullptr;
+  if (first) {
+    run_parent = lv_obj_create(screen);
+    lv_obj_set_style_bg_opa(run_parent, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(run_parent, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(run_parent, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(run_parent, 0, LV_PART_MAIN);
+    lv_obj_set_scrollable(run_parent, false);
+    player = new jlp::LayoutPlayer();
+    // The pages start below the panel's status strip, as on the device,
+    // so a layout's y means the same here; the page draws no strip.
+    player->init(run_parent, [](JsonObjectConst doc, bool) {
+      const bool strip = doc["status_overlay"] | true;
+      const int top = strip ? kStatusStripHeight : 0;
+      run_top = top;
+      lv_obj_set_pos(run_parent, 0, top);
+      lv_obj_set_size(run_parent, lv_pct(100),
+                      lv_display_get_vertical_resolution(disp) - top);
+    });
+  }
+  jlp::LayoutPlayer::Result r = player->apply(json);
+  if (!r.ok) {
+    // A first layout that fails leaves the preview as it was.
+    if (first) {
+      delete player;
+      player = nullptr;
+      lv_obj_delete(run_parent);
+      run_parent = nullptr;
+    }
+    err_storage = r.err;
+    return err_storage.c_str();
+  }
+  if (first && current_root) {
+    lv_obj_delete(current_root);
+    current_root = nullptr;
+    last_layout.clear();
+  }
+  if (json != run_layout.c_str()) run_layout = json;
+  lv_obj_set_style_bg_color(screen, lv_color_hex(jlp::theme::palette().screen),
+                            LV_PART_MAIN);
+  return "";
+}
+
+// Shows the screen with this `screens[].id`; 0 when it is unknown or the
+// layout has one screen.
+EMSCRIPTEN_KEEPALIVE
+int jlp_select_screen(const char* id) {
+  return player != nullptr && id != nullptr && player->select_screen(id) ? 1 : 0;
+}
+
+// Touch at (x, y) in display pixels. LVGL reads it on the next frame.
+EMSCRIPTEN_KEEPALIVE
+void jlp_pointer(int x, int y, int pressed) {
+  // A drag only needs its latest position; the press keeps where it
+  // landed, and a release is kept.
+  const bool down = pressed != 0;
+  const bool held = pointer_events.empty() ? pointer_last.down
+                                           : pointer_events.back().down;
+  const bool move = down && held;
+  if (move && !pointer_events.empty() && pointer_events.back().move) {
+    pointer_events.back().at = {x, y};
+    return;
+  }
+  if (pointer_events.size() >= 64) pointer_events.pop_front();
+  pointer_events.push_back({{x, y}, down, move});
+}
+
+// The firmware's /hello widget catalog, so a browser display offers the
+// designer exactly the kinds this build renders.
+EMSCRIPTEN_KEEPALIVE
+const char* jlp_widget_catalog() { return jlp::kWidgetCatalogJson; }
 
 EMSCRIPTEN_KEEPALIVE
 void jlp_set_value_float(const char* path, float v) {

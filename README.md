@@ -48,6 +48,31 @@ cmake --build build -j
 Outputs `public/jlp_wasm.js` (175 KB) + `public/jlp_wasm.wasm`
 (~1.6 MB).
 
+## Running a display
+
+A browser display (signalk-espos-hmi) runs the layout instead of
+previewing it, through the firmware's own `LayoutPlayer`: every screen,
+the tab strip and page swipes, touch in and writes out.
+
+```js
+const mod = await createJlpWasm({
+  canvas,
+  jlpPut: (path, valueJson) => { /* PUT to Signal K */ },
+  // Reserved for the alert overlay, which this build does not draw yet.
+  jlpAck: (pathAfterPrefix) => { /* state: normal delta */ },
+})
+mod._jlp_init(1920, 1080)
+mod._jlp_run_layout(ptr)          // "" or why not; replaces any preview
+mod._jlp_pointer(x, y, 1)         // touch, in display pixels; 0 on release
+mod._jlp_select_screen(idPtr)     // 1 when shown
+mod.UTF8ToString(mod._jlp_widget_catalog())  // the firmware's /hello widgets;
+                                             // drop the kinds a page cannot feed
+```
+
+Pages start below the panel's 28 px status strip when the layout keeps
+`status_overlay`, so positions mean the same as on the panel; the strip
+itself and the alert overlay are not drawn yet.
+
 ## Smoke test
 
 ```bash

@@ -21,9 +21,14 @@ firmware draws — no device required.
      `zone_registry.cpp::color_for_state`. Both take their shades from
      the firmware's header-only `main/jlp/theme.h`, so the palettes
      themselves live in one place.
-3. **Not a runtime.** No SK websocket, no PUTs, no notification
-   registry consumer. JS feeds simulated values via the `jlp_set_*`
-   bridge functions.
+3. **No Signal K inside.** No websocket, no HTTP. JS feeds values
+   through the `jlp_set_*` bridge functions; writes leave through
+   `Module.jlpPut` / `Module.jlpAck`, which the page turns into its own
+   PUT and ACK delta. `jlp_apply_layout` is the designer's single-screen
+   preview; `jlp_run_layout` runs a browser display (signalk-espos-hmi)
+   through the firmware's own `LayoutPlayer`, with touch from
+   `jlp_pointer`. Never fork the player: it comes from the firmware
+   checkout like `widget_factory.cpp`.
 
 ## Where to start reading
 

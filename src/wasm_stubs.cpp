@@ -13,10 +13,9 @@
 //     same get_or_create cache).
 //
 // What's replaced:
-//   - espos_sk_subscribe / espos_sk_put -> no-op (PUTs are routed
-//     back to the JS bridge via puts_emit; SK reads come from
-//     subject_registry::feed_value which the bridge calls when the
-//     designer wants to simulate a new SK value).
+//   - espos_sk_subscribe -> no-op; values come in through the
+//     jlp_set_value_* bridge. espos_sk_put -> Module.jlpPut on the page
+//     (jlp_emit_put below), when the page has one.
 //   - WS notifications.* delta consumer -> in-memory snapshot the JS
 //     bridge populates from a JSON blob.
 //   - Zone meta delivery -> JS-supplied table per path.
@@ -37,6 +36,8 @@
 #include "net/stream_client.h"
 
 #include <emscripten.h>
+
+#include <ArduinoJson.h>
 
 #include "lvgl.h"
 
@@ -322,41 +323,58 @@ Chime& chime() {
 void drop_anchor_here() {}
 
 // ----- sk_put -----------------------------------------------------------
-// In firmware these PUT to the SignalK server. In WASM there's no SK to
-// talk to — we just remember the last PUT per path so the JS bridge
-// can surface "what would the device send right now?" for the
-// inspector. A future iteration could call back into JS via
-// EM_ASM/EM_JS to forward the PUT to the connected device.
+// In firmware these PUT to the SignalK server. Here they go to the page
+// as Module.jlpPut(path, valueJson) and Module.jlpAck(pathAfterPrefix),
+// which a browser display turns into its own PUT and ACK delta. A page
+// without them (the designer's preview) writes nothing.
+
+}  // namespace jlp
+
+// The callbacks run after the LVGL event that caused them: a page that
+// throws, or applies another layout from inside them, must not unwind
+// through lv_timer_handler or delete the widget still handling the tap.
+EM_JS(void, jlp_emit_put, (const char* path, const char* json), {
+  if (typeof Module.jlpPut !== "function") return;
+  const p = UTF8ToString(path);
+  const v = UTF8ToString(json);
+  setTimeout(() => {
+    try { Module.jlpPut(p, v); } catch (e) { console.error("jlpPut", e); }
+  }, 0);
+});
+
+EM_JS(int, jlp_emit_ack, (const char* path), {
+  if (typeof Module.jlpAck !== "function") return 0;
+  const p = UTF8ToString(path);
+  setTimeout(() => {
+    try { Module.jlpAck(p); } catch (e) { console.error("jlpAck", e); }
+  }, 0);
+  return 1;
+});
+
+namespace jlp {
 
 namespace {
-struct LastPut { std::string kind; std::string value; };
-std::map<std::string, LastPut>& last_puts() {
-  static std::map<std::string, LastPut> m;
-  return m;
+template <typename T>
+void emit_put(const std::string& path, T value) {
+  JsonDocument doc;
+  doc.set(value);
+  std::string json;
+  serializeJson(doc, json);
+  jlp_emit_put(path.c_str(), json.c_str());
 }
 }  // namespace
 
-void put_bool(const std::string& p, bool v) {
-  last_puts()[p] = {"bool", v ? "true" : "false"};
-}
-void put_int(const std::string& p, int v) {
-  last_puts()[p] = {"int", std::to_string(v)};
-}
-void put_float(const std::string& p, float v) {
-  last_puts()[p] = {"float", std::to_string(v)};
-}
+void put_bool(const std::string& p, bool v) { emit_put(p, v); }
+void put_int(const std::string& p, int v) { emit_put(p, v); }
+void put_float(const std::string& p, float v) { emit_put(p, v); }
 void put_string(const std::string& p, const std::string& v) {
-  last_puts()[p] = {"string", v};
+  emit_put(p, v.c_str());
 }
-void put_null(const std::string& p) {
-  last_puts()[p] = {"null", "null"};
-}
+void put_null(const std::string& p) { jlp_emit_put(p.c_str(), "null"); }
+// As on the panel, the caller acks locally first; this only tells the
+// server, and answers false when no page is there to do it.
 bool put_notification_ack(const std::string& path_after_prefix) {
-  // In firmware this constructs an inbound SK delta. In WASM we
-  // mirror the local-ack behavior so the alert overlay dismisses.
-  // The result only steers the firmware's server delta; the local ack
-  // is all the preview needs.
-  return notifications().acknowledge(path_after_prefix);
+  return jlp_emit_ack(path_after_prefix.c_str()) != 0;
 }
 
 // ----- stream client ----------------------------------------------------
