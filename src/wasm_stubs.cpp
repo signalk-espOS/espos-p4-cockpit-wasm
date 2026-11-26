@@ -86,6 +86,8 @@ lv_subject_t* SubjectRegistry::get_or_create(const std::string& path,
       break;
   }
   if (entry->subject == nullptr) return nullptr;
+  // Mirrors the firmware: no reading until the page sends one.
+  if (kind == SubjectKind::Float) lv_subject_set_float(entry->subject, kNoReading);
   lv_subject_t* out = entry->subject;
   map_.emplace(path, Slot{std::move(entry)});
   return out;
