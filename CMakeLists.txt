@@ -64,7 +64,7 @@ endif()
 
 # The firmware's Latin-1 Montserrat fonts (main/jlp/fonts). Globbed, so a
 # checkout from before they existed still builds.
-file(GLOB FW_FONTS "${FW_ROOT}/fonts/*.c")
+file(GLOB FW_FONTS CONFIGURE_DEPENDS "${FW_ROOT}/fonts/*.c")
 
 add_library(jlp_widgets STATIC
   "${FW_ROOT}/widgets/widget_factory.cpp"
