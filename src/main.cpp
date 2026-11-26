@@ -141,6 +141,7 @@ static std::string last_layout;
 
 // The running layout of a browser display, once jlp_run_layout was called.
 static jlp::LayoutPlayer* player = nullptr;
+static bool run_read_only = false;
 static lv_obj_t* run_parent = nullptr;
 static std::string run_layout;
 static int run_top = 0;  // the status strip's height while the layout keeps it
@@ -327,6 +328,7 @@ const char* jlp_run_layout(const char* json) {
     lv_obj_set_style_pad_all(run_parent, 0, LV_PART_MAIN);
     lv_obj_set_scrollable(run_parent, false);
     player = new jlp::LayoutPlayer();
+    player->set_read_only(run_read_only);
     // The pages start below the panel's status strip, as on the device,
     // so a layout's y means the same here; the page draws no strip.
     player->init(run_parent, [](JsonObjectConst doc, bool) {
@@ -359,6 +361,16 @@ const char* jlp_run_layout(const char* json) {
   lv_obj_set_style_bg_color(screen, lv_color_hex(jlp::theme::palette().screen),
                             LV_PART_MAIN);
   return "";
+}
+
+// A display that only shows values: touch still changes the screen, but
+// no widget acts on it. Holds for the running layout and every later one.
+// 0 when the running layout could not be covered; the mode is unchanged.
+EMSCRIPTEN_KEEPALIVE
+int jlp_set_read_only(int on) {
+  if (player != nullptr && !player->set_read_only(on != 0)) return 0;
+  run_read_only = on != 0;
+  return 1;
 }
 
 // Shows the screen with this `screens[].id`; 0 when it is unknown or the

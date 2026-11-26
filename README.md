@@ -65,6 +65,7 @@ mod._jlp_init(1920, 1080)
 mod._jlp_run_layout(ptr)          // "" or why not; replaces any preview
 mod._jlp_pointer(x, y, 1)         // touch, in display pixels; 0 on release
 mod._jlp_select_screen(idPtr)     // 1 when shown
+mod._jlp_set_read_only(1)         // values only: tabs and swipes, no writes; 1 when set
 mod.UTF8ToString(mod._jlp_widget_catalog())  // the firmware's /hello widgets;
                                              // drop the kinds a page cannot feed
 ```
