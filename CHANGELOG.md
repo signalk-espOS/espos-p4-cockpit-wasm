@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.0 (2026-11-26)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Added
+* feat: run layouts with touch for browser displays by @dirkwa in https://github.com/signalk-espOS/espos-p4-cockpit-wasm/pull/31
+
+
+**Full Changelog**: https://github.com/signalk-espOS/espos-p4-cockpit-wasm/compare/v1.2.1...v1.3.0
+
 ## 1.2.1 (2026-11-19)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
