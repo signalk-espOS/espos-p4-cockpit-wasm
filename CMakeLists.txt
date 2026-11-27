@@ -62,9 +62,14 @@ if(NOT EXISTS "${JSON_ROOT}/ArduinoJson.h")
   message(FATAL_ERROR "ArduinoJson not found at ${JSON_ROOT} — build the firmware once.")
 endif()
 
+# The firmware's Latin-1 Montserrat fonts (main/jlp/fonts). Globbed, so a
+# checkout from before they existed still builds.
+file(GLOB FW_FONTS CONFIGURE_DEPENDS "${FW_ROOT}/fonts/*.c")
+
 add_library(jlp_widgets STATIC
   "${FW_ROOT}/widgets/widget_factory.cpp"
   "${FW_ROOT}/layout/layout_player.cpp"
+  ${FW_FONTS}
   "${CMAKE_SOURCE_DIR}/src/wasm_stubs.cpp")
 target_include_directories(jlp_widgets PUBLIC
   # Shim dir first: satisfies notifications_registry.h's vestigial
